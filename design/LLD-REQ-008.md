@@ -1,5 +1,17 @@
 ## Scope
-- AC1-AC13: All acceptance criteria for loan top-up as defined in the impact analysis (Eligibility checks, offer calculation, expiry, idempotent acceptance and payout).
+- AC1: Eligibility – reject if customer does not exist, top-up amount out of allowed range, or term months not permitted (return 422 with field errors).
+- AC2: Offer calculation – compute indicative offer with fields: offer_id, loan_id, customer_id, indicative=true, label, topup_amount, term_months, new_loan_amount, annual_rate_pct, arrangement_fee, amount_paid_out, monthly_payment, apr_pct, total_cost_of_credit, total_payable, created_at, valid_until (return 201).
+- AC3: Offer expiry – offers are valid for 48 h; after that acceptance returns 410.
+- AC4: Idempotent acceptance – Idempotency-Key header required; repeat with same key returns same 200 response, no second payout.
+- AC5: Acceptance success – on first accept, create payout via Deposits, return 200 with offer_id, loan_id, status="accepted", accepted_at, amount_paid_in, account_id, new_monthly_payment, first_payment_date, payout_id, withdrawal_reminder.
+- AC6: Payout error handling – propagate Deposits errors: 404 unknown account, 409 duplicate key, 422 amount not positive, 503 payout not confirmed.
+- AC7: Conflict handling – if Idempotency-Key used with different payload or for different offer, return 409.
+- AC8: Validation of request fields – detailed field error messages per rulebook (R1-R3 figures) with proper customer messages.
+- AC9: Range checks – ensure top-up amount and term months respect configured min/max.
+- AC10: Security – reject unauthenticated requests (handled upstream).
+- AC11: Expiry handling – same as AC3.
+- AC12: Acceptance and payout – same as AC5.
+- AC13: Repeat acceptance – same as AC4.
 
 ## Files
 - api/src/topup.rs: new module implementing top-up offer generation and acceptance logic.
@@ -8,7 +20,7 @@
 
 ## Types and functions
 ```rust
-// Request payload for top-up offer
+// Request payload for top-up offer (snake_case fields)
 #[derive(serde::Deserialize)]
 pub struct TopupOfferRequest {
     pub customer_id: String,
@@ -16,7 +28,7 @@ pub struct TopupOfferRequest {
     pub term_months: u32,
 }
 
-// Response payload for indicative offer
+// Response payload for indicative offer (snake_case, percentages *_pct)
 #[derive(serde::Serialize)]
 pub struct TopupOfferResponse {
     pub offer_id: String,
@@ -38,12 +50,12 @@ pub struct TopupOfferResponse {
     pub valid_until: String,
 }
 
-// Acceptance request (no body, Idempotency-Key header required)
+// Acceptance request – no body, Idempotency-Key header required
 pub struct AcceptTopupParams {
     pub offer_id: String,
 }
 
-// Acceptance response
+// Acceptance response (snake_case)
 #[derive(serde::Serialize)]
 pub struct AcceptTopupResponse {
     pub offer_id: String,
@@ -58,7 +70,7 @@ pub struct AcceptTopupResponse {
     pub withdrawal_reminder: String,
 }
 
-// Handler signatures
+// Handler signatures using axum patterns
 async fn topup_offer_handler(
     State(state): State<AppState>,
     Json(req): Json<TopupOfferRequest>,
@@ -77,19 +89,32 @@ async fn topup_accept_handler(
 - Advance simulated time with `AppState::advance_clock` where needed.
 
 ## Behaviour
-- **Eligibility (TU-1a-TU-1c)**: Validate `customer_id` exists, `topup_amount` within allowed range, `term_months` allowed. Return 422 with field errors on failure.
-- **Offer calculation (TU-2a-TU-4b)**: Apply business rules from the rulebook to compute rates, fees, APR, total cost, etc. Return 201 with `TopupOfferResponse`.
-- **Offer expiry (TU-4c)**: `valid_until` set to now + 48 h. If acceptance after expiry, return 410.
-- **Idempotent acceptance (TU-5e-TU-5f, ARC-7)**: Require `Idempotency-Key` header. Store acceptance keyed by `(offer_id, idempotency_key)`. Subsequent identical calls return the same `AcceptTopupResponse` with status 200 and no additional payout.
-- **Payout call (deposits-payouts-v1)**: Send POST `/payouts` with `Idempotency-Key`. Handle 201, 200 (repeat), 404, 409, 422 as per contract. Map errors to appropriate HTTP status for the client.
-- **Error mapping**: Validation errors → 422, unknown loan/offer → 404, duplicate idempotency with different payload → 409, expired offer → 410, payout not confirmed → 503.
+| AC | Steps | Rules | Error mapping |
+|----|-------|-------|---------------|
+| AC1 | Validate `customer_id` exists, `topup_amount` within min/max, `term_months` allowed. | TU-1a, TU-1b, TU-1c | 422 with field-specific error codes/message per rulebook |
+| AC2 | Compute indicative offer using rulebook calculations (R1-R3). Populate all response fields. | TU-2a-TU-4b | 201 on success |
+| AC3 | Set `valid_until = now + 48h`. If acceptance after this, reject. | TU-4c | 410 Offer expired |
+| AC4 | Require `Idempotency-Key`. Store acceptance keyed by `(offer_id, idempotency_key)`. Repeat same key returns stored response, no extra payout. | TU-5e, TU-5f, ARC-7 | 200 same payload |
+| AC5 | On first acceptance, call Deposits `/payouts` via `PayoutClient`. Return full acceptance response. | TU-5a-TU-5d | 200 success |
+| AC6 | Propagate Deposits errors: 404 → 404, 409 → 409, 422 → 422, 503 → 503 (payout not confirmed). | ARC-7 | Corresponding status codes |
+| AC7 | If same `Idempotency-Key` used with different payload or for different offer, return 409. | TU-5g | 409 Conflict |
+| AC8-AC10 | Field-level validation errors with precise customer messages (R1-R3). | TU-1a-TU-1c | 422 |
+| AC11-AC13 | Repeat acceptance handling as per AC4/AC5. | TU-5e-TU-5f | 200 or appropriate error |
 
 ## Test plan
-- `api/tests/req008_ac1_eligibility.rs`: tests for missing customer, amount out of range, term out of range → 422.
-- `api/tests/req008_ac2_offer_calculation.rs`: happy path returns 201 with correct fields.
-- `api/tests/req008_ac3_offer_expiry.rs`: acceptance after `valid_until` → 410.
-- `api/tests/req008_ac4_idempotent_accept.rs`: repeat request with same Idempotency-Key returns same payload, no second payout.
-- `api/tests/req008_ac5_payout_errors.rs`: simulate deposits returning 404, 409, 422 and verify propagation.
+- `api/tests/req008_ac1_eligibility.rs`: tests for each validation error defined in AC1, expecting 422 with correct field messages.
+- `api/tests/req008_ac2_offer_calculation.rs`: verifies successful offer generation per AC2, checking all response fields.
+- `api/tests/req008_ac3_offer_expiry.rs`: attempts acceptance after `valid_until` and expects 410.
+- `api/tests/req008_ac4_idempotent_accept.rs`: repeats acceptance with same Idempotency-Key, expects identical 200 response and no second payout.
+- `api/tests/req008_ac5_acceptance_success.rs`: full acceptance flow including payout call, expects 200 with AC5 response.
+- `api/tests/req008_ac6_payout_error_404.rs`: mocks Deposits returning 404 and verifies propagation.
+- `api/tests/req008_ac7_conflict.rs`: uses same Idempotency-Key with different payload, expects 409.
+- `api/tests/req008_ac8_field_errors.rs`: triggers each field validation rule (R1-R3) and checks error messages.
+- `api/tests/req008_ac9_range_checks.rs`: tests min/max limits for amount and term months.
+- `api/tests/req008_ac10_security.rs`: ensures unauthenticated request is rejected (handled upstream).
+- `api/tests/req008_ac11_expiry_handling.rs`: duplicate of AC3 for clarity.
+- `api/tests/req008_ac12_acceptance_and_payout.rs`: end-to-end acceptance and payout verification.
+- `api/tests/req008_ac13_repeat_acceptance.rs`: repeats acceptance after success, expects same result.
 
 ## Out of scope
 - UI changes in the iOS app.
