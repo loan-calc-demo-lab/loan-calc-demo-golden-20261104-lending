@@ -3,19 +3,22 @@
 
 ## Files
 - api/src/topup.rs: new module implementing top-up offer generation and acceptance logic.
-- api/src/payout_client.rs: client for calling the deposits-payouts-v1 API.
-- api/src/lib.rs: add routes `/loans//topup-offers` (POST) and `/topup-offers//accept` (POST) with Idempotency-Key header handling.
+- api/src/payouts.rs: new module (or extend existing) for calling the deposits payout service.
+- api/src/lib.rs: add routes `/loans//topup-offers` and `/topup-offers//accept` and import handlers.
 
 ## Types and functions
 ```rust
-// In api/src/topup.rs
-pub struct TopupRequest {
+// Request payload for top-up offer
+#[derive(serde::Deserialize)]
+pub struct TopupOfferRequest {
     pub customer_id: String,
     pub topup_amount: f64,
     pub term_months: u32,
 }
 
-pub struct OfferResponse {
+// Response payload for indicative offer
+#[derive(serde::Serialize)]
+pub struct TopupOfferResponse {
     pub offer_id: String,
     pub loan_id: String,
     pub customer_id: String,
@@ -35,12 +38,17 @@ pub struct OfferResponse {
     pub valid_until: String,
 }
 
-pub struct AcceptRequest {}
+// Acceptance request (no body, Idempotency-Key header required)
+pub struct AcceptTopupParams {
+    pub offer_id: String,
+}
 
-pub struct AcceptResult {
+// Acceptance response
+#[derive(serde::Serialize)]
+pub struct AcceptTopupResponse {
     pub offer_id: String,
     pub loan_id: String,
-    pub status: String,
+    pub status: String, // "accepted"
     pub accepted_at: String,
     pub amount_paid_in: f64,
     pub account_id: String,
@@ -50,32 +58,40 @@ pub struct AcceptResult {
     pub withdrawal_reminder: String,
 }
 
-// Handler signatures in lib.rs
-async fn topup_offer_handler(State(state): State<AppState>, Json(req): Json<TopupRequest>) -> impl IntoResponse;
-async fn topup_accept_handler(State(state): State<AppState>, HeaderMap(headers): HeaderMap, Json(req): Json<AcceptRequest>) -> impl IntoResponse;
+// Handler signatures
+async fn topup_offer_handler(
+    State(state): State<AppState>,
+    Json(req): Json<TopupOfferRequest>,
+) -> impl IntoResponse;
 
-// In api/src/payout_client.rs
-pub struct PayoutRequest { pub account_id: String, pub amount: f64, pub reference: String }
-pub struct PayoutResponse { pub payout_id: String, pub account_id: String, pub amount: f64, pub reference: String, pub new_balance: f64, pub created_at: String }
-pub async fn post_payout(state: &AppState, req: PayoutRequest, idempotency_key: &str) -> Result<PayoutResponse, ServiceError>;
+async fn topup_accept_handler(
+    State(state): State<AppState>,
+    Path(params): Path<AcceptTopupParams>,
+    headers: axum::http::HeaderMap,
+) -> impl IntoResponse;
 ```
 
+### House pattern calls
+- Use `PayoutClient` (defined in `api/src/payouts.rs`) to call the deposits service.
+- Record payout with `RecordingPayoutClient` in tests.
+- Advance simulated time with `AppState::advance_clock` where needed.
+
 ## Behaviour
-- **Eligibility (AC1-AC4)**: `topup_offer_handler` validates `customer_id` exists, `topup_amount` within allowed range, `term_months` allowed values, and loan is eligible (TU-1a-TU-1c). Errors map to 404 or 422 with rule-based messages.
-- **Offer calculation (AC5-AC10)**: Uses existing loan calculation module (`calc::quote`) extended with top-up parameters, applies arrangement fee and APR rules (TU-2a-TU-4b). Returns 201 with `OfferResponse`.
-- **Offer expiry (AC11)**: `valid_until` set to `created_at + 15 min`. If a later accept request is after expiry, returns 410.
-- **Idempotent acceptance (AC12-AC13)**: `topup_accept_handler` reads `Idempotency-Key` header. Stores acceptance keyed by `(offer_id, Idempotency-Key)`. Re-play returns stored `AcceptResult` with 200 and no second payout (TU-5e). Mismatch key returns 409. If loan no longer eligible returns 422. If payout not confirmed returns 503 (retry same key) – ARC-7.
-- **Payout call**: Calls `post_payout` with same `Idempotency-Key`. Handles 201, 200 (repeat), 404, 409, 422 as per contract.
+- **Eligibility (TU-1a-TU-1c)**: Validate `customer_id` exists, `topup_amount` within allowed range, `term_months` allowed. Return 422 with field errors on failure.
+- **Offer calculation (TU-2a-TU-4b)**: Apply business rules from the rulebook to compute rates, fees, APR, total cost, etc. Return 201 with `TopupOfferResponse`.
+- **Offer expiry (TU-4c)**: `valid_until` set to now + 48 h. If acceptance after expiry, return 410.
+- **Idempotent acceptance (TU-5e-TU-5f, ARC-7)**: Require `Idempotency-Key` header. Store acceptance keyed by `(offer_id, idempotency_key)`. Subsequent identical calls return the same `AcceptTopupResponse` with status 200 and no additional payout.
+- **Payout call (deposits-payouts-v1)**: Send POST `/payouts` with `Idempotency-Key`. Handle 201, 200 (repeat), 404, 409, 422 as per contract. Map errors to appropriate HTTP status for the client.
+- **Error mapping**: Validation errors → 422, unknown loan/offer → 404, duplicate idempotency with different payload → 409, expired offer → 410, payout not confirmed → 503.
 
 ## Test plan
-- `api/tests/req008_ac1_eligibility.rs`: test unknown customer → 404.
-- `api/tests/req008_ac2_amount_range.rs`: amount out of range → 422.
-- `api/tests/req008_ac5_offer_calculation.rs`: valid request returns 201 with correct fields.
-- `api/tests/req008_ac11_expiry.rs`: accept after expiry → 410.
-- `api/tests/req008_ac12_idempotent_accept.rs`: repeat accept with same Idempotency-Key returns same result, no second payout.
-- `api/tests/req008_ac13_payout_error.rs`: mock payout 503 and ensure 503 returned, retry possible.
+- `api/tests/req008_ac1_eligibility.rs`: tests for missing customer, amount out of range, term out of range → 422.
+- `api/tests/req008_ac2_offer_calculation.rs`: happy path returns 201 with correct fields.
+- `api/tests/req008_ac3_offer_expiry.rs`: acceptance after `valid_until` → 410.
+- `api/tests/req008_ac4_idempotent_accept.rs`: repeat request with same Idempotency-Key returns same payload, no second payout.
+- `api/tests/req008_ac5_payout_errors.rs`: simulate deposits returning 404, 409, 422 and verify propagation.
 
 ## Out of scope
 - UI changes in the iOS app.
 - OAuth2 authentication handling.
-- Persistent storage beyond in-memory demo structures.
+- Persistent storage beyond in-memory demo.
