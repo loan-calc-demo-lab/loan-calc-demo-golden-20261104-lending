@@ -50,13 +50,16 @@ pub struct LoanBook {
 }
 
 impl LoanBook {
-    /// Fictional demo data: one loan in good standing, one in arrears, one too new.
+    /// Fictional demo data: one loan in good standing, one in arrears, one too new, (REQ-008 AC3) one repaid
+    /// without a current account with the bank, and (REQ-008 AC9) one large enough that a top-up can exceed €30,000.
     pub fn demo() -> Self {
         let mut loans = BTreeMap::new();
         for l in [
             existing_loan("PL-1001", "CUST-1001", 12_000.0, 8.9, 60, 18, false, "CA-2001"),
             existing_loan("PL-1002", "CUST-1002", 8_000.0, 9.5, 48, 20, true, "CA-2002"),
             existing_loan("PL-1003", "CUST-1003", 5_000.0, 10.0, 36, 3, false, "CA-2003"),
+            existing_loan("PL-1004", "CUST-1004", 6_000.0, 9.5, 48, 12, false, ""),
+            existing_loan("PL-1005", "CUST-1005", 20_000.0, 8.9, 60, 12, false, "CA-2005"),
         ] {
             loans.insert(l.loan_id.clone(), l);
         }
