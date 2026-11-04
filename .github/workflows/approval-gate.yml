@@ -1,0 +1,29 @@
+name: approval-gate
+# Human approval gate. Passes only when an approver listed in governance/roles.toml (read from main)
+# has approved the latest commit of the pull request. Agents cannot approve.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_review:
+    types: [submitted, dismissed]
+permissions:
+  contents: read
+  pull-requests: read
+concurrency:
+  group: approval-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  gate:
+    name: Approval gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main (rules are read from main, never from the pull request)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+      - name: Check approvals
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python3 base/governance/approval_gate.py

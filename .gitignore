@@ -1,0 +1,9 @@
+api/target/
+ios/build/
+ios/**/xcuserdata/
+ios/**/DerivedData/
+.DS_Store
+*.xcuserstate
+ios/Config/Local.xcconfig
+__pycache__/
+*.pyc

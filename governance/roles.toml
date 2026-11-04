@@ -1,0 +1,18 @@
+# Who may do what in this repository (demo). Read from `main` only; agents cannot change governance/.
+#
+# - operators: may start agent runs in watsonx Orchestrate (matched by Orchestrate sign-in e-mail).
+# - approvers: the domain tech lead(s). The "Approval gate" check turns green only after an approver has approved
+#   the latest commit of the pull request (gate C). The approver of a change is never its operator.
+#
+# Agents may write here only after the requirements (gate B) and the design (gate D) are merged in the
+# architecture repository of the same run.
+
+[settings]
+# Demo only: one person holds every role, so self-approval is allowed and shown as a warning.
+allow_self_approval = true
+
+[operators]
+users = [ { name = "Karoly Olah", github = "karoly", email = "karoly_olah@epam.com" } ]
+
+[approvers]
+users = [ { name = "Karoly Olah", github = "karoly", email = "karoly_olah@epam.com" } ]
