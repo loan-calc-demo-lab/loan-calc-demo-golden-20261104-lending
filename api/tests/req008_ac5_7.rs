@@ -16,9 +16,9 @@ async fn req008_ac5_r1_offer_fields() {
         "topup_amount": 5000.0,
         "term_months": 60
     });
-    let resp = common::post_json(&app, "/loans/PL-1001/topup-offers", req, &[ ("Idempotency-Key", "k1") ]).await;
-    assert_eq!(resp.status(), 201);
-    let offer: serde_json::Value = serde_json::from_slice(&resp.body()).unwrap();
+    let (status, body) = common::post_json(&app, "/loans/PL-1001/topup-offers", req, &[ ("Idempotency-Key", "k1") ]).await;
+    assert_eq!(status, 201);
+    let offer: serde_json::Value = body;
     assert_eq!(offer["topup_amount"], 5000.0);
     assert_eq!(offer["term_months"], 60);
     assert_eq!(offer["new_loan_amount"], 13940.27);
@@ -41,9 +41,9 @@ async fn req008_ac6_r2_offer_fields() {
         "topup_amount": 7000.0,
         "term_months": 72
     });
-    let resp = common::post_json(&app, "/loans/PL-1001/topup-offers", req, &[ ("Idempotency-Key", "k2") ]).await;
-    assert_eq!(resp.status(), 201);
-    let offer: serde_json::Value = serde_json::from_slice(&resp.body()).unwrap();
+    let (status, body) = common::post_json(&app, "/loans/PL-1001/topup-offers", req, &[ ("Idempotency-Key", "k2") ]).await;
+    assert_eq!(status, 201);
+    let offer: serde_json::Value = body;
     assert_eq!(offer["topup_amount"], 7000.0);
     assert_eq!(offer["term_months"], 72);
     assert_eq!(offer["new_loan_amount"], 15940.27);
@@ -66,9 +66,9 @@ async fn req008_ac7_r3_offer_fields() {
         "topup_amount": 1000.0,
         "term_months": 48
     });
-    let resp = common::post_json(&app, "/loans/PL-1001/topup-offers", req, &[ ("Idempotency-Key", "k3") ]).await;
-    assert_eq!(resp.status(), 201);
-    let offer: serde_json::Value = serde_json::from_slice(&resp.body()).unwrap();
+    let (status, body) = common::post_json(&app, "/loans/PL-1001/topup-offers", req, &[ ("Idempotency-Key", "k3") ]).await;
+    assert_eq!(status, 201);
+    let offer: serde_json::Value = body;
     assert_eq!(offer["topup_amount"], 1000.0);
     assert_eq!(offer["term_months"], 48);
     assert_eq!(offer["new_loan_amount"], 9940.27);
