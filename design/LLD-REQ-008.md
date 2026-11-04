@@ -152,12 +152,14 @@ async fn topup_accept_handler(
 - `api/tests/req008_ac5.rs`: tests AC5 offer expiry after 24h.
 - `api/tests/req008_ac6.rs`: tests AC6 acceptance with payout.
 - `api/tests/req008_ac7.rs`: tests AC7 repeat acceptance idempotency.
-- `api/tests/req008_ac8.rs`: tests AC8 Idempotency-Key conflict.
-- `api/tests/req008_ac9.rs`: tests AC9 top-up amount out of range.
-- `api/tests/req008_ac10.rs`: tests AC10 new loan amount exceeds limit.
-- `api/tests/req008_ac11.rs`: tests AC11 term outside allowed range.
-- `api/tests/req008_ac12.rs`: tests AC12 successful acceptance and payout details.
-- `api/tests/req008_ac13.rs`: tests AC13 second acceptance returns first result.
+- `api/tests/req008_ac8.rs`: tests AC8 top-up amount out of allowed range.
+- `api/tests/req008_ac9.rs`: tests AC9 new loan amount exceeds limit.
+- `api/tests/req008_ac10.rs`: tests AC10 term outside allowed range.
+- `api/tests/req008_ac11.rs`: tests AC11 offer expiry after 24h (410).
+- `api/tests/req008_ac12.rs`: tests AC12 acceptance processing, payout details, storage.
+- `api/tests/req008_ac13.rs`: tests AC13 second acceptance returns first result, no extra payout.
+- `api/tests/req008_ac13_extra_409.rs`: tests Idempotency-Key conflict (409) under AC13.
+- `api/tests/req008_ac13_extra_404.rs`: tests unknown offer (404) under AC13.
 
 
 ## Out of scope
