@@ -16,7 +16,7 @@ async fn req008_ac11_offer_expires_after_24h() {
         "topup_amount": 5000.0,
         "term_months": 60
     });
-    let resp = common::post_json(&app, "/loans/PL-1001/topup-offers", req, &[ ("Idempotency-Key", "k1") ]).await;
+    let (status, body) = common::post_json(&app, "/loans/PL-1001/topup-offers", req, &[ ("Idempotency-Key", "k1") ]).await;
     assert_eq!(resp.status(), 201);
     let offer: serde_json::Value = serde_json::from_slice(&resp.body()).unwrap();
     let offer_id = offer["offer_id"].as_str().unwrap();
